@@ -1,0 +1,41 @@
+bundle:
+  bundle_id_prefix: "cn_a_daily_training"
+  market: "CN_A"
+  periods:
+    - "1d"
+  future_compatible_periods:
+    - "1m"
+    - "5m"
+    - "15m"
+  fields:
+    - "time"
+    - "open"
+    - "high"
+    - "low"
+    - "close"
+    - "volume"
+    - "amount"
+  indicators:
+    - "ma5"
+    - "ma10"
+    - "ma20"
+    - "macd"
+  context_bars: 30
+  training_bars: 30
+  segment_stride: 5
+  max_segments_per_symbol: 200
+
+fetch:
+  period: "daily"
+  adjust: "qfq"
+  start_date: "20180101"
+  end_date: null
+  use_cached_raw: true
+
+paths:
+  workspace_dir: "./workspace"
+  raw_dir: "./workspace/raw"
+  processed_dir: "./workspace/processed"
+  build_dir: "./workspace/build"
+  output_dir: "./workspace/output"
+
