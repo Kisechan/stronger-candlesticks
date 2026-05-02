@@ -7,7 +7,7 @@ from pathlib import Path
 import akshare as ak
 import pandas as pd
 
-from common import normalize_cn_symbol
+from data_pipeline.common import normalize_cn_symbol
 
 
 def fetch_daily_history(

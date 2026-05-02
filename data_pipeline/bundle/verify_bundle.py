@@ -7,7 +7,7 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
-from common import compute_payload_hash
+from data_pipeline.common import compute_payload_hash
 
 
 REQUIRED_FILES = {"manifest.json", "stocks.json", "segment_index.json"}

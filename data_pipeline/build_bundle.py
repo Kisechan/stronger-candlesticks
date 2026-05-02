@@ -7,13 +7,13 @@ from typing import Any
 
 import pandas as pd
 
-from bundle.pack_bundle import pack_bundle
-from bundle.verify_bundle import verify_bundle_archive
-from common import ensure_dir, exchange_from_symbol, load_config, read_stock_pool, with_exchange_suffix
-from fetch.fetch_daily import fetch_daily_history
-from process.indicators import apply_indicators
-from process.normalize import normalize_daily_dataframe
-from segment.segment_builder import build_segments
+from data_pipeline.bundle.pack_bundle import pack_bundle
+from data_pipeline.bundle.verify_bundle import verify_bundle_archive
+from data_pipeline.common import ensure_dir, exchange_from_symbol, load_config, read_stock_pool, with_exchange_suffix
+from data_pipeline.fetch.fetch_daily import fetch_daily_history
+from data_pipeline.process.indicators import apply_indicators
+from data_pipeline.process.normalize import normalize_daily_dataframe
+from data_pipeline.segment.segment_builder import build_segments
 
 
 def build_bundle(config_path: Path) -> dict[str, Any]:

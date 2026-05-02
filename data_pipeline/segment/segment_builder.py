@@ -4,7 +4,7 @@ from typing import Any
 
 import pandas as pd
 
-from common import SegmentArtifact, dataframe_to_bar_records
+from data_pipeline.common import SegmentArtifact, dataframe_to_bar_records
 
 
 def build_segments(

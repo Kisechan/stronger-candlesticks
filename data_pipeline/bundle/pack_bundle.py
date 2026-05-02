@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from common import SegmentArtifact, compute_payload_hash, ensure_dir, write_json
+from data_pipeline.common import SegmentArtifact, compute_payload_hash, ensure_dir, write_json
 
 
 def pack_bundle(
