@@ -364,7 +364,9 @@ Map<String, dynamic> _buildDemoBundle() {
       symbolIndex: index,
     );
     final stockSegments = <Map<String, dynamic>>[];
-    for (var start = 20; start <= 50; start += 10) {
+    final totalBarsPerSegment = contextBars + trainingBars;
+    final maxStart = bars.length - totalBarsPerSegment;
+    for (var start = 20; start <= maxStart; start += 10) {
       final window = bars.sublist(start, start + contextBars + trainingBars);
       final segmentId = '${symbol.replaceAll('.', '_')}_1d_$start';
       final path = 'segments/daily/$symbol/$segmentId.json';

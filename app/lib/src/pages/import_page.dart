@@ -31,6 +31,7 @@ class _ImportPageState extends State<ImportPage> {
       navigationBar: const CupertinoNavigationBar(
         middle: Text('导入数据'),
         border: null,
+        transitionBetweenRoutes: false,
       ),
       child: SafeArea(
         child: AnimatedBuilder(

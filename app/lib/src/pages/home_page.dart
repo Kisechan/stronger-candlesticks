@@ -21,6 +21,7 @@ class HomePage extends StatelessWidget {
           const CupertinoSliverNavigationBar(
             largeTitle: Text('训练'),
             border: null,
+            transitionBetweenRoutes: false,
           ),
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(18, 8, 18, 40),

@@ -18,6 +18,7 @@ class StockPickerPage extends StatelessWidget {
       navigationBar: const CupertinoNavigationBar(
         middle: Text('选择股票'),
         border: null,
+        transitionBetweenRoutes: false,
       ),
       child: SafeArea(
         child: ListView.separated(

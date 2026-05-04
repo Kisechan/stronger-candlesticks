@@ -23,6 +23,7 @@ class ResultPage extends StatelessWidget {
       navigationBar: const CupertinoNavigationBar(
         middle: Text('结果'),
         border: null,
+        transitionBetweenRoutes: false,
       ),
       child: SafeArea(
         child: ListView(
