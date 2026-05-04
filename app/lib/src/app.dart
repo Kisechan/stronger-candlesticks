@@ -28,6 +28,7 @@ class _KlineTrainingAppState extends State<KlineTrainingApp> {
   @override
   Widget build(BuildContext context) {
     return CupertinoApp(
+      title: 'Stronger Candlesticks',
       debugShowCheckedModeBanner: false,
       theme: buildAppTheme(),
       home: _AppShell(controller: _controller),
@@ -179,9 +180,9 @@ class _SplashPage extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              '训练',
+              'Stronger Candlesticks',
               style: TextStyle(
-                fontSize: 30,
+                fontSize: 28,
                 fontWeight: FontWeight.w700,
                 color: AppColors.textPrimary,
               ),
