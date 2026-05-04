@@ -284,49 +284,62 @@ class _KlineChartState extends State<KlineChart> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        return GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          dragStartBehavior: DragStartBehavior.down,
-          onDoubleTap: () {
-            setState(() {
-              _selectedIndex = null;
-              _syncViewport(forceTail: true);
-            });
-          },
-          onHorizontalDragUpdate: _handlePan,
-          onLongPressStart: (details) =>
-              _updateSelection(details.localPosition, constraints.maxWidth),
-          onLongPressMoveUpdate: (details) =>
-              _updateSelection(details.localPosition, constraints.maxWidth),
-          onLongPressEnd: (_) => setState(() => _selectedIndex = null),
-          child: CustomPaint(
-            painter: _KlinePainter(
-              bars: widget.bars,
-              viewStart: _viewStart,
-              viewEnd: end,
-              selectedIndex: _selectedIndex,
+        return RepaintBoundary(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: AppColors.line),
             ),
-            child: Container(
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: AppColors.line),
-              ),
-              child: Align(
-                alignment: Alignment.topLeft,
-                child: selectedBar == null
-                    ? const SizedBox.shrink()
-                    : Padding(
-                        padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
-                        child: Text(
-                          '${selectedBar.time}  O ${selectedBar.open.toStringAsFixed(2)}  H ${selectedBar.high.toStringAsFixed(2)}  L ${selectedBar.low.toStringAsFixed(2)}  C ${selectedBar.close.toStringAsFixed(2)}',
-                          style: const TextStyle(
-                            color: AppColors.textSecondary,
-                            fontSize: 12,
-                            fontFeatures: [FontFeature.tabularFigures()],
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(18),
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                dragStartBehavior: DragStartBehavior.down,
+                onDoubleTap: () {
+                  setState(() {
+                    _selectedIndex = null;
+                    _syncViewport(forceTail: true);
+                  });
+                },
+                onHorizontalDragUpdate: _handlePan,
+                onLongPressStart: (details) => _updateSelection(
+                  details.localPosition,
+                  constraints.maxWidth,
+                ),
+                onLongPressMoveUpdate: (details) => _updateSelection(
+                  details.localPosition,
+                  constraints.maxWidth,
+                ),
+                onLongPressEnd: (_) => setState(() => _selectedIndex = null),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    CustomPaint(
+                      painter: _KlinePainter(
+                        bars: widget.bars,
+                        viewStart: _viewStart,
+                        viewEnd: end,
+                        selectedIndex: _selectedIndex,
+                      ),
+                    ),
+                    if (selectedBar != null)
+                      Align(
+                        alignment: Alignment.topLeft,
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
+                          child: Text(
+                            '${selectedBar.time}  O ${selectedBar.open.toStringAsFixed(2)}  H ${selectedBar.high.toStringAsFixed(2)}  L ${selectedBar.low.toStringAsFixed(2)}  C ${selectedBar.close.toStringAsFixed(2)}',
+                            style: const TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 12,
+                              fontFeatures: [FontFeature.tabularFigures()],
+                            ),
                           ),
                         ),
                       ),
+                  ],
+                ),
               ),
             ),
           ),

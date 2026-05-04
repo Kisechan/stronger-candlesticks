@@ -76,7 +76,8 @@ class LocalBundleRepository implements BundleRepository {
       );
     }
 
-    final archive = ZipDecoder().decodeBytes(bytesBuilder.takeBytes());
+    final archiveBytes = bytesBuilder.takeBytes();
+    final archive = ZipDecoder().decodeBytes(archiveBytes);
     onProgress(
       const ImportProgress.running(message: '正在校验文件结构', progress: 0.62),
     );
@@ -98,14 +99,24 @@ class LocalBundleRepository implements BundleRepository {
 
     final bundleId = manifest['bundleId'] as String? ?? 'imported_bundle';
     final bundleDir = await _replaceExistingBundle(bundleId: bundleId);
+    final persistedArchive = File('${bundleDir.path}/bundle.ktpkg');
 
     onProgress(
       const ImportProgress.running(message: '正在写入本地文件', progress: 0.76),
     );
-    for (final entry in files.entries) {
-      final target = File('${bundleDir.path}/${entry.key}');
+    persistedArchive.writeAsBytesSync(archiveBytes, flush: true);
+    for (final rootName in const [
+      'manifest.json',
+      'stocks.json',
+      'segment_index.json',
+    ]) {
+      final archiveFile = files[rootName];
+      if (archiveFile == null) {
+        continue;
+      }
+      final target = File('${bundleDir.path}/$rootName');
       target.parent.createSync(recursive: true);
-      target.writeAsBytesSync(entry.value.content as List<int>);
+      target.writeAsBytesSync(archiveFile.content as List<int>, flush: true);
     }
 
     onProgress(
@@ -148,9 +159,38 @@ class LocalBundleRepository implements BundleRepository {
     BundleCatalog catalog,
     SegmentIndexEntry entry,
   ) async {
-    final file = File('${catalog.rootPath}/${entry.path}');
+    final extractedFile = File('${catalog.rootPath}/${entry.path}');
+    if (extractedFile.existsSync()) {
+      final payload =
+          jsonDecode(await extractedFile.readAsString())
+              as Map<String, dynamic>;
+      return SegmentPayload.fromJson(payload);
+    }
+
+    final bundleArchiveFile = File('${catalog.rootPath}/bundle.ktpkg');
+    if (!bundleArchiveFile.existsSync()) {
+      throw StateError('bundle archive not found for ${entry.segmentId}');
+    }
+
+    final archive = ZipDecoder().decodeBytes(
+      await bundleArchiveFile.readAsBytes(),
+    );
+    ArchiveFile? matchedFile;
+    for (final file in archive.files) {
+      if (file.isFile && file.name == entry.path) {
+        matchedFile = file;
+        break;
+      }
+    }
+    if (matchedFile == null) {
+      throw StateError('segment ${entry.path} missing from bundle archive');
+    }
+
     final payload =
-        jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+        jsonDecode(
+              utf8.decode(Uint8List.fromList(matchedFile.content as List<int>)),
+            )
+            as Map<String, dynamic>;
     return SegmentPayload.fromJson(payload);
   }
 
