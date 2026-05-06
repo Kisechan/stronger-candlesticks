@@ -10,11 +10,14 @@ import 'models.dart';
 
 abstract class BundleRepository {
   Future<BundleCatalog?> loadCurrentBundle();
+  Future<List<BundleCatalog>> loadBundles();
   Future<BundleCatalog> importBundleFromUrl(
     String url, {
     required void Function(ImportProgress progress) onProgress,
   });
   Future<BundleCatalog> seedDemoBundle();
+  Future<void> selectBundle(String bundleId);
+  Future<void> deleteBundle(String bundleId);
   Future<SegmentPayload> loadSegment(
     BundleCatalog catalog,
     SegmentIndexEntry entry,
@@ -40,6 +43,36 @@ class LocalBundleRepository implements BundleRepository {
       return null;
     }
     return _loadCatalogFromBundleDir(bundleDir);
+  }
+
+  @override
+  Future<List<BundleCatalog>> loadBundles() async {
+    final rootDir = await _bundleRootDirectory();
+    if (!rootDir.existsSync()) {
+      return const [];
+    }
+
+    final bundles = <BundleCatalog>[];
+    for (final entity in rootDir.listSync()) {
+      if (entity is! Directory) {
+        continue;
+      }
+      final manifestFile = File('${entity.path}/manifest.json');
+      final stocksFile = File('${entity.path}/stocks.json');
+      final indexFile = File('${entity.path}/segment_index.json');
+      if (!manifestFile.existsSync() ||
+          !stocksFile.existsSync() ||
+          !indexFile.existsSync()) {
+        continue;
+      }
+      bundles.add(await _loadCatalogFromBundleDir(entity));
+    }
+
+    bundles.sort(
+      (left, right) =>
+          right.manifest.createdAt.compareTo(left.manifest.createdAt),
+    );
+    return bundles;
   }
 
   @override
@@ -98,31 +131,27 @@ class LocalBundleRepository implements BundleRepository {
     }
 
     final bundleId = manifest['bundleId'] as String? ?? 'imported_bundle';
-    final bundleDir = await _replaceExistingBundle(bundleId: bundleId);
+    final bundleDir = await _prepareBundleDirectory(bundleId: bundleId);
     final persistedArchive = File('${bundleDir.path}/bundle.ktpkg');
 
     onProgress(
       const ImportProgress.running(message: '正在写入本地文件', progress: 0.76),
     );
     persistedArchive.writeAsBytesSync(archiveBytes, flush: true);
-    for (final rootName in const [
-      'manifest.json',
-      'stocks.json',
-      'segment_index.json',
-    ]) {
-      final archiveFile = files[rootName];
-      if (archiveFile == null) {
+    for (final file in archive.files) {
+      if (!file.isFile) {
         continue;
       }
-      final target = File('${bundleDir.path}/$rootName');
+      final target = File('${bundleDir.path}/${file.name}');
       target.parent.createSync(recursive: true);
-      target.writeAsBytesSync(archiveFile.content as List<int>, flush: true);
+      target.writeAsBytesSync(file.content as List<int>, flush: true);
     }
 
     onProgress(
       const ImportProgress.running(message: '正在整理训练索引', progress: 0.92),
     );
     final catalog = await _loadCatalogFromBundleDir(bundleDir);
+    _validateCatalog(catalog);
     await _writeAppState({
       'currentBundleId': catalog.manifest.bundleId,
       'latestResult': (await loadLatestResult())?.toJson(),
@@ -135,7 +164,7 @@ class LocalBundleRepository implements BundleRepository {
   @override
   Future<BundleCatalog> seedDemoBundle() async {
     final bundleId = 'demo_training_bundle';
-    final bundleDir = await _replaceExistingBundle(bundleId: bundleId);
+    final bundleDir = await _prepareBundleDirectory(bundleId: bundleId);
     final root = bundleDir.path;
     final demo = _buildDemoBundle();
 
@@ -152,6 +181,31 @@ class LocalBundleRepository implements BundleRepository {
     state['currentBundleId'] = catalog.manifest.bundleId;
     await _writeAppState(state);
     return catalog;
+  }
+
+  @override
+  Future<void> selectBundle(String bundleId) async {
+    final state = await _readAppState();
+    state['currentBundleId'] = bundleId;
+    await _writeAppState(state);
+  }
+
+  @override
+  Future<void> deleteBundle(String bundleId) async {
+    final rootDir = await _bundleRootDirectory();
+    final bundleDir = Directory('${rootDir.path}/$bundleId');
+    if (bundleDir.existsSync()) {
+      bundleDir.deleteSync(recursive: true);
+    }
+
+    final state = await _readAppState();
+    if (state['currentBundleId'] == bundleId) {
+      final bundles = await loadBundles();
+      state['currentBundleId'] = bundles.isEmpty
+          ? null
+          : bundles.first.manifest.bundleId;
+      await _writeAppState(state);
+    }
   }
 
   @override
@@ -214,16 +268,15 @@ class LocalBundleRepository implements BundleRepository {
     await _writeAppState(state);
   }
 
-  Future<Directory> _replaceExistingBundle({required String bundleId}) async {
+  Future<Directory> _prepareBundleDirectory({required String bundleId}) async {
     final rootDir = await _bundleRootDirectory();
-    if (rootDir.existsSync()) {
-      for (final entity in rootDir.listSync()) {
-        entity.deleteSync(recursive: true);
-      }
-    } else {
+    if (!rootDir.existsSync()) {
       rootDir.createSync(recursive: true);
     }
     final bundleDir = Directory('${rootDir.path}/$bundleId');
+    if (bundleDir.existsSync()) {
+      bundleDir.deleteSync(recursive: true);
+    }
     bundleDir.createSync(recursive: true);
     return bundleDir;
   }
@@ -300,6 +353,15 @@ class LocalBundleRepository implements BundleRepository {
     final bytes = Uint8List.fromList(file.content as List<int>);
     return jsonDecode(utf8.decode(bytes));
   }
+
+  void _validateCatalog(BundleCatalog catalog) {
+    if (catalog.manifest.symbolCount != catalog.stocks.length) {
+      throw const FormatException('bundle 股票索引数量不一致');
+    }
+    if (catalog.manifest.segmentCount != catalog.segments.length) {
+      throw const FormatException('bundle segment 索引数量不一致');
+    }
+  }
 }
 
 class MemoryBundleRepository implements BundleRepository {
@@ -316,6 +378,12 @@ class MemoryBundleRepository implements BundleRepository {
       await seedDemoBundle();
     }
     return _catalog;
+  }
+
+  @override
+  Future<List<BundleCatalog>> loadBundles() async {
+    final catalog = await loadCurrentBundle();
+    return catalog == null ? const [] : [catalog];
   }
 
   @override
@@ -345,6 +413,17 @@ class MemoryBundleRepository implements BundleRepository {
   @override
   Future<void> saveLatestResult(TrainingResult result) async {
     _latestResult = result;
+  }
+
+  @override
+  Future<void> selectBundle(String bundleId) async {}
+
+  @override
+  Future<void> deleteBundle(String bundleId) async {
+    if (_catalog?.manifest.bundleId == bundleId) {
+      _catalog = null;
+      _segments.clear();
+    }
   }
 
   @override
@@ -383,7 +462,7 @@ class MemoryBundleRepository implements BundleRepository {
 }
 
 Map<String, dynamic> _buildDemoBundle() {
-  const contextBars = 30;
+  const contextBars = 20;
   const trainingBars = 30;
   final symbols = [
     ('600519.SH', '贵州茅台'),
@@ -400,7 +479,7 @@ Map<String, dynamic> _buildDemoBundle() {
     final name = stockTuple.$2;
     final bars = _generateBars(
       seed: 42 + index * 9,
-      count: 124,
+      count: 220,
       symbolIndex: index,
     );
     final stockSegments = <Map<String, dynamic>>[];
@@ -448,6 +527,8 @@ Map<String, dynamic> _buildDemoBundle() {
     }
     stocks.add({
       'symbol': symbol,
+      'code': symbol.split('.').first,
+      'exchange': symbol.split('.').last,
       'name': name,
       'period': '1d',
       'barCount': bars.length,
@@ -465,8 +546,17 @@ Map<String, dynamic> _buildDemoBundle() {
     'symbolCount': stocks.length,
     'segmentCount': totalSegments,
     'segmentLength': trainingBars,
-    'fields': ['time', 'open', 'high', 'low', 'close', 'volume', 'amount'],
-    'indicators': ['ma5', 'ma10', 'ma20', 'macd'],
+    'fields': [
+      'time',
+      'open',
+      'high',
+      'low',
+      'close',
+      'volume',
+      'amount',
+      'turnoverRate',
+    ],
+    'indicators': ['ma5', 'ma10', 'ma20', 'ma30', 'ma60', 'ma120', 'macd'],
     'hash': {'algorithm': 'demo', 'value': 'demo'},
   };
   files['stocks.json'] = stocks;
@@ -511,9 +601,13 @@ List<Map<String, dynamic>> _generateBars({
       'close': _round(close),
       'volume': volume.toDouble(),
       'amount': _round(amount),
+      'turnoverRate': _round(0.8 + random.nextDouble() * 4.6),
       'ma5': ma5 == null ? null : _round(ma5),
       'ma10': ma10 == null ? null : _round(ma10),
       'ma20': ma20 == null ? null : _round(ma20),
+      'ma30': _ma(closes, 30) == null ? null : _round(_ma(closes, 30)!),
+      'ma60': _ma(closes, 60) == null ? null : _round(_ma(closes, 60)!),
+      'ma120': _ma(closes, 120) == null ? null : _round(_ma(closes, 120)!),
       'macdDiff': _round(macdValues.$1),
       'macdDea': _round(macdValues.$2),
       'macdHist': _round(macdValues.$3),
@@ -521,7 +615,7 @@ List<Map<String, dynamic>> _generateBars({
     lastClose = close;
   }
 
-  return bars.where((bar) => bar['ma20'] != null).toList();
+  return bars.where((bar) => bar['ma120'] != null).toList();
 }
 
 double? _ma(List<double> values, int period) {

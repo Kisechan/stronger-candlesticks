@@ -61,12 +61,14 @@ class AppController extends ChangeNotifier {
   final Random _random = Random();
 
   bool _isBootstrapping = true;
+  List<BundleCatalog> _bundles = const [];
   BundleCatalog? _catalog;
   TrainingResult? _latestResult;
   ImportProgress _importProgress = const ImportProgress.idle();
   String? _errorMessage;
 
   bool get isBootstrapping => _isBootstrapping;
+  List<BundleCatalog> get bundles => List.unmodifiable(_bundles);
   BundleCatalog? get catalog => _catalog;
   TrainingResult? get latestResult => _latestResult;
   ImportProgress get importProgress => _importProgress;
@@ -75,7 +77,12 @@ class AppController extends ChangeNotifier {
 
   Future<void> bootstrap() async {
     try {
+      _bundles = await _repository.loadBundles();
       _catalog = await _repository.loadCurrentBundle();
+      if (_catalog == null && _bundles.isNotEmpty) {
+        _catalog = _bundles.first;
+        await _repository.selectBundle(_catalog!.manifest.bundleId);
+      }
       _latestResult = await _repository.loadLatestResult();
     } catch (error) {
       _errorMessage = error.toString();
@@ -101,6 +108,7 @@ class AppController extends ChangeNotifier {
           notifyListeners();
         },
       );
+      _bundles = await _repository.loadBundles();
       _importProgress = const ImportProgress.done(message: '导入完成');
     } catch (error) {
       _importProgress = ImportProgress.failed(
@@ -122,6 +130,7 @@ class AppController extends ChangeNotifier {
 
     try {
       _catalog = await _repository.seedDemoBundle();
+      _bundles = await _repository.loadBundles();
       _importProgress = const ImportProgress.done(message: '已加载演示数据');
     } catch (error) {
       _importProgress = ImportProgress.failed(
@@ -130,6 +139,20 @@ class AppController extends ChangeNotifier {
       );
       _errorMessage = error.toString();
     }
+    notifyListeners();
+  }
+
+  Future<void> selectBundle(String bundleId) async {
+    await _repository.selectBundle(bundleId);
+    _bundles = await _repository.loadBundles();
+    _catalog = await _repository.loadCurrentBundle();
+    notifyListeners();
+  }
+
+  Future<void> deleteBundle(String bundleId) async {
+    await _repository.deleteBundle(bundleId);
+    _bundles = await _repository.loadBundles();
+    _catalog = await _repository.loadCurrentBundle();
     notifyListeners();
   }
 
@@ -152,6 +175,8 @@ class AppController extends ChangeNotifier {
         catalog.stockBySymbol(entry.symbol) ??
         BundleStock(
           symbol: entry.symbol,
+          code: entry.symbol.split('.').first,
+          exchange: entry.symbol.split('.').last,
           name: entry.symbol,
           period: entry.period,
           barCount: payload.bars.length,

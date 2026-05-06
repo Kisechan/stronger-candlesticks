@@ -6,7 +6,7 @@ import pandas as pd
 def apply_indicators(frame: pd.DataFrame) -> pd.DataFrame:
     enriched = frame.copy()
 
-    for window in (5, 10, 20):
+    for window in (5, 10, 20, 30, 60, 120):
         enriched[f"ma{window}"] = enriched["close"].rolling(window=window, min_periods=window).mean()
 
     ema12 = enriched["close"].ewm(span=12, adjust=False).mean()
@@ -16,6 +16,5 @@ def apply_indicators(frame: pd.DataFrame) -> pd.DataFrame:
     enriched["macdHist"] = (enriched["macdDiff"] - enriched["macdDea"]) * 2
 
     # The app expects fully-populated indicator windows, so early partial rows are removed.
-    enriched = enriched.dropna(subset=["ma20"]).reset_index(drop=True)
+    enriched = enriched.dropna(subset=["ma120"]).reset_index(drop=True)
     return enriched
-

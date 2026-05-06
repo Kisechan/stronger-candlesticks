@@ -15,12 +15,16 @@ bundle:
     - "close"
     - "volume"
     - "amount"
+    - "turnoverRate"
   indicators:
     - "ma5"
     - "ma10"
     - "ma20"
+    - "ma30"
+    - "ma60"
+    - "ma120"
     - "macd"
-  context_bars: 30
+  context_bars: 20
   training_bars: 30
   segment_stride: 5
   max_segments_per_symbol: 200
@@ -38,4 +42,3 @@ paths:
   processed_dir: "./workspace/processed"
   build_dir: "./workspace/build"
   output_dir: "./workspace/output"
-

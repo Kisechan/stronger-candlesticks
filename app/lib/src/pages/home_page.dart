@@ -3,6 +3,7 @@ import 'package:flutter/cupertino.dart';
 import '../app.dart';
 import '../theme.dart';
 import '../ui_components.dart';
+import 'bundle_library_page.dart';
 import 'import_page.dart';
 import 'stock_picker_page.dart';
 import 'training_page.dart';
@@ -127,6 +128,9 @@ class _ReadySection extends StatelessWidget {
   Widget build(BuildContext context) {
     final catalog = controller.catalog!;
     final latest = controller.latestResult;
+    final sampleSegment = catalog.segments.isEmpty
+        ? null
+        : catalog.segments.first;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -144,6 +148,21 @@ class _ReadySection extends StatelessWidget {
               value: '${catalog.manifest.segmentCount}',
             ),
             InfoRow(label: '导入市场', value: catalog.manifest.market),
+            InfoRow(
+              label: '训练窗口',
+              value:
+                  '${sampleSegment?.contextBars ?? 20} + ${sampleSegment?.trainingBars ?? 30}',
+            ),
+            SecondaryActionButton(
+              label: '管理 Bundle 仓库',
+              onPressed: () {
+                Navigator.of(context).push(
+                  CupertinoPageRoute(
+                    builder: (_) => BundleLibraryPage(controller: controller),
+                  ),
+                );
+              },
+            ),
           ],
         ),
         const SizedBox(height: 18),

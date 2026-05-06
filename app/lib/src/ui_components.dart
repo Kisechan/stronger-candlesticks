@@ -1,5 +1,4 @@
 import 'dart:math';
-
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/gestures.dart';
 
@@ -209,15 +208,43 @@ class FeedbackPill extends StatelessWidget {
   }
 }
 
+enum MovingAverageLine { ma5, ma10, ma20, ma30, ma60, ma120 }
+
+extension MovingAverageLineX on MovingAverageLine {
+  String get label => switch (this) {
+    MovingAverageLine.ma5 => 'MA5',
+    MovingAverageLine.ma10 => 'MA10',
+    MovingAverageLine.ma20 => 'MA20',
+    MovingAverageLine.ma30 => 'MA30',
+    MovingAverageLine.ma60 => 'MA60',
+    MovingAverageLine.ma120 => 'MA120',
+  };
+
+  Color get color => switch (this) {
+    MovingAverageLine.ma5 => AppColors.ma5,
+    MovingAverageLine.ma10 => AppColors.ma10,
+    MovingAverageLine.ma20 => AppColors.ma20,
+    MovingAverageLine.ma30 => AppColors.ma30,
+    MovingAverageLine.ma60 => AppColors.ma60,
+    MovingAverageLine.ma120 => AppColors.ma120,
+  };
+}
+
 class KlineChart extends StatefulWidget {
   const KlineChart({
     super.key,
     required this.bars,
     required this.revealedCount,
+    required this.movingAverages,
+    this.showVolume = true,
+    this.showMacd = true,
   });
 
   final List<SegmentBar> bars;
   final int revealedCount;
+  final Set<MovingAverageLine> movingAverages;
+  final bool showVolume;
+  final bool showMacd;
 
   @override
   State<KlineChart> createState() => _KlineChartState();
@@ -287,12 +314,23 @@ class _KlineChartState extends State<KlineChart> {
         return RepaintBoundary(
           child: DecoratedBox(
             decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(18),
+              gradient: const LinearGradient(
+                colors: [AppColors.chartBackground, AppColors.surface],
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+              ),
+              borderRadius: BorderRadius.circular(22),
               border: Border.all(color: AppColors.line),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x12000000),
+                  blurRadius: 20,
+                  offset: Offset(0, 12),
+                ),
+              ],
             ),
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(18),
+              borderRadius: BorderRadius.circular(22),
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 dragStartBehavior: DragStartBehavior.down,
@@ -321,6 +359,9 @@ class _KlineChartState extends State<KlineChart> {
                         viewStart: _viewStart,
                         viewEnd: end,
                         selectedIndex: _selectedIndex,
+                        movingAverages: widget.movingAverages,
+                        showVolume: widget.showVolume,
+                        showMacd: widget.showMacd,
                       ),
                     ),
                     if (selectedBar != null)
@@ -329,7 +370,7 @@ class _KlineChartState extends State<KlineChart> {
                         child: Padding(
                           padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
                           child: Text(
-                            '${selectedBar.time}  O ${selectedBar.open.toStringAsFixed(2)}  H ${selectedBar.high.toStringAsFixed(2)}  L ${selectedBar.low.toStringAsFixed(2)}  C ${selectedBar.close.toStringAsFixed(2)}',
+                            '${selectedBar.time}  O ${selectedBar.open.toStringAsFixed(2)}  H ${selectedBar.high.toStringAsFixed(2)}  L ${selectedBar.low.toStringAsFixed(2)}  C ${selectedBar.close.toStringAsFixed(2)}  V ${(selectedBar.volume / 10000).toStringAsFixed(1)}万  换手 ${selectedBar.turnoverRate?.toStringAsFixed(2) ?? '--'}%',
                             style: const TextStyle(
                               color: AppColors.textSecondary,
                               fontSize: 12,
@@ -355,12 +396,18 @@ class _KlinePainter extends CustomPainter {
     required this.viewStart,
     required this.viewEnd,
     required this.selectedIndex,
+    required this.movingAverages,
+    required this.showVolume,
+    required this.showMacd,
   });
 
   final List<SegmentBar> bars;
   final int viewStart;
   final int viewEnd;
   final int? selectedIndex;
+  final Set<MovingAverageLine> movingAverages;
+  final bool showVolume;
+  final bool showMacd;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -368,13 +415,38 @@ class _KlinePainter extends CustomPainter {
     const rightPad = 44.0;
     const topPad = 32.0;
     const bottomPad = 24.0;
+    const paneGap = 10.0;
 
-    final chartRect = Rect.fromLTWH(
+    final drawableHeight = size.height - topPad - bottomPad;
+    final volumeHeight = showVolume ? drawableHeight * 0.18 : 0.0;
+    final macdHeight = showMacd ? drawableHeight * 0.2 : 0.0;
+    final gapCount = (showVolume ? 1 : 0) + (showMacd ? 1 : 0);
+    final priceHeight =
+        drawableHeight - volumeHeight - macdHeight - gapCount * paneGap;
+
+    final priceRect = Rect.fromLTWH(
       leftPad,
       topPad,
       size.width - leftPad - rightPad,
-      size.height - topPad - bottomPad,
+      priceHeight,
     );
+    final volumeRect = showVolume
+        ? Rect.fromLTWH(
+            leftPad,
+            priceRect.bottom + paneGap,
+            priceRect.width,
+            volumeHeight,
+          )
+        : Rect.zero;
+    final macdRect = showMacd
+        ? Rect.fromLTWH(
+            leftPad,
+            (showVolume ? volumeRect.bottom : priceRect.bottom) + paneGap,
+            priceRect.width,
+            macdHeight,
+          )
+        : Rect.zero;
+
     final visibleCount = max(0, viewEnd - viewStart);
     if (visibleCount <= 0) {
       return;
@@ -383,20 +455,26 @@ class _KlinePainter extends CustomPainter {
     final visibleBars = bars.sublist(viewStart, viewEnd);
     var minPrice = visibleBars.first.low;
     var maxPrice = visibleBars.first.high;
+    var maxVolume = 0.0;
+    var maxMacdAbs = 0.0;
+
     for (final bar in visibleBars) {
       minPrice = min(minPrice, bar.low);
       maxPrice = max(maxPrice, bar.high);
-      if (bar.ma5 != null) {
-        minPrice = min(minPrice, bar.ma5!);
-        maxPrice = max(maxPrice, bar.ma5!);
-      }
-      if (bar.ma10 != null) {
-        minPrice = min(minPrice, bar.ma10!);
-        maxPrice = max(maxPrice, bar.ma10!);
-      }
-      if (bar.ma20 != null) {
-        minPrice = min(minPrice, bar.ma20!);
-        maxPrice = max(maxPrice, bar.ma20!);
+      maxVolume = max(maxVolume, bar.volume);
+      maxMacdAbs = max(
+        maxMacdAbs,
+        max(
+          (bar.macdHist ?? 0).abs(),
+          max((bar.macdDiff ?? 0).abs(), (bar.macdDea ?? 0).abs()),
+        ),
+      );
+      for (final average in movingAverages) {
+        final value = _movingAverageValue(bar, average);
+        if (value != null) {
+          minPrice = min(minPrice, value);
+          maxPrice = max(maxPrice, value);
+        }
       }
     }
 
@@ -404,42 +482,82 @@ class _KlinePainter extends CustomPainter {
     final safeRange = priceRange <= 0 ? 1.0 : priceRange * 1.06;
     final chartTop = maxPrice + safeRange * 0.02;
     final chartBottom = minPrice - safeRange * 0.04;
+    final safeMacdAbs = maxMacdAbs <= 0 ? 1.0 : maxMacdAbs * 1.12;
+
+    final shadePaint = Paint()..color = AppColors.chartShade;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(0, 0, size.width, size.height),
+        const Radius.circular(22),
+      ),
+      shadePaint,
+    );
 
     final gridPaint = Paint()
       ..color = AppColors.line
       ..strokeWidth = 0.8;
     for (var i = 0; i < 4; i++) {
-      final y = chartRect.top + chartRect.height * (i / 3);
+      final y = priceRect.top + priceRect.height * (i / 3);
       canvas.drawLine(
-        Offset(chartRect.left, y),
-        Offset(chartRect.right, y),
+        Offset(priceRect.left, y),
+        Offset(priceRect.right, y),
+        gridPaint,
+      );
+    }
+    if (showVolume) {
+      canvas.drawLine(
+        Offset(volumeRect.left, volumeRect.top),
+        Offset(volumeRect.right, volumeRect.top),
+        gridPaint,
+      );
+    }
+    if (showMacd) {
+      canvas.drawLine(
+        Offset(macdRect.left, macdRect.top),
+        Offset(macdRect.right, macdRect.top),
+        gridPaint,
+      );
+      canvas.drawLine(
+        Offset(macdRect.left, macdRect.center.dy),
+        Offset(macdRect.right, macdRect.center.dy),
         gridPaint,
       );
     }
 
-    final stride = chartRect.width / visibleCount;
+    final stride = priceRect.width / visibleCount;
     final candleWidth = max(4.0, stride * 0.54);
+
+    double yForPrice(double price) {
+      return priceRect.bottom -
+          ((price - chartBottom) / (chartTop - chartBottom) * priceRect.height);
+    }
+
+    double yForMacd(double value) {
+      return macdRect.center.dy -
+          (value / safeMacdAbs) * (macdRect.height * 0.42);
+    }
+
     final wickPaint = Paint()
       ..strokeWidth = 1.1
       ..strokeCap = StrokeCap.round;
     final bodyPaint = Paint()..style = PaintingStyle.fill;
-
-    double yForPrice(double price) {
-      return chartRect.bottom -
-          ((price - chartBottom) / (chartTop - chartBottom) * chartRect.height);
-    }
-
-    final ma5Path = Path();
-    final ma10Path = Path();
-    final ma20Path = Path();
-    var ma5Started = false;
-    var ma10Started = false;
-    var ma20Started = false;
+    final volumePaint = Paint()..style = PaintingStyle.fill;
+    final histogramPaint = Paint()..style = PaintingStyle.fill;
+    final averagePaths = <MovingAverageLine, Path>{
+      for (final average in movingAverages) average: Path(),
+    };
+    final averageStarted = <MovingAverageLine, bool>{
+      for (final average in movingAverages) average: false,
+    };
+    final diffPath = Path();
+    final deaPath = Path();
+    var diffStarted = false;
+    var deaStarted = false;
 
     for (var i = 0; i < visibleCount; i++) {
       final globalIndex = viewStart + i;
       final bar = bars[globalIndex];
-      final centerX = chartRect.left + stride * i + stride / 2;
+      final centerX = priceRect.left + stride * i + stride / 2;
       final openY = yForPrice(bar.open);
       final closeY = yForPrice(bar.close);
       final highY = yForPrice(bar.high);
@@ -462,31 +580,75 @@ class _KlinePainter extends CustomPainter {
         bodyPaint,
       );
 
-      if (bar.ma5 != null) {
-        final point = Offset(centerX, yForPrice(bar.ma5!));
-        if (!ma5Started) {
-          ma5Path.moveTo(point.dx, point.dy);
-          ma5Started = true;
+      for (final average in movingAverages) {
+        final value = _movingAverageValue(bar, average);
+        if (value == null) {
+          continue;
+        }
+        final point = Offset(centerX, yForPrice(value));
+        if (!(averageStarted[average] ?? false)) {
+          averagePaths[average]!.moveTo(point.dx, point.dy);
+          averageStarted[average] = true;
         } else {
-          ma5Path.lineTo(point.dx, point.dy);
+          averagePaths[average]!.lineTo(point.dx, point.dy);
         }
       }
-      if (bar.ma10 != null) {
-        final point = Offset(centerX, yForPrice(bar.ma10!));
-        if (!ma10Started) {
-          ma10Path.moveTo(point.dx, point.dy);
-          ma10Started = true;
-        } else {
-          ma10Path.lineTo(point.dx, point.dy);
-        }
+
+      if (showVolume) {
+        final ratio = maxVolume <= 0 ? 0.0 : bar.volume / maxVolume;
+        final volumeTop = volumeRect.bottom - volumeRect.height * ratio;
+        volumePaint.color = (isRise ? AppColors.rise : AppColors.fall)
+            .withValues(alpha: 0.34);
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            Rect.fromLTRB(
+              centerX - candleWidth / 2,
+              volumeTop,
+              centerX + candleWidth / 2,
+              volumeRect.bottom,
+            ),
+            const Radius.circular(1.2),
+          ),
+          volumePaint,
+        );
       }
-      if (bar.ma20 != null) {
-        final point = Offset(centerX, yForPrice(bar.ma20!));
-        if (!ma20Started) {
-          ma20Path.moveTo(point.dx, point.dy);
-          ma20Started = true;
-        } else {
-          ma20Path.lineTo(point.dx, point.dy);
+
+      if (showMacd) {
+        final hist = bar.macdHist ?? 0;
+        final zeroY = yForMacd(0);
+        final histY = yForMacd(hist);
+        histogramPaint.color = (hist >= 0 ? AppColors.rise : AppColors.fall)
+            .withValues(alpha: 0.58);
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            Rect.fromLTRB(
+              centerX - candleWidth / 2,
+              min(zeroY, histY),
+              centerX + candleWidth / 2,
+              max(zeroY, histY),
+            ),
+            const Radius.circular(1.0),
+          ),
+          histogramPaint,
+        );
+
+        if (bar.macdDiff case final diff?) {
+          final point = Offset(centerX, yForMacd(diff));
+          if (!diffStarted) {
+            diffPath.moveTo(point.dx, point.dy);
+            diffStarted = true;
+          } else {
+            diffPath.lineTo(point.dx, point.dy);
+          }
+        }
+        if (bar.macdDea case final dea?) {
+          final point = Offset(centerX, yForMacd(dea));
+          if (!deaStarted) {
+            deaPath.moveTo(point.dx, point.dy);
+            deaStarted = true;
+          } else {
+            deaPath.lineTo(point.dx, point.dy);
+          }
         }
       }
     }
@@ -495,12 +657,33 @@ class _KlinePainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.4
       ..strokeJoin = StrokeJoin.round;
-    linePaint.color = AppColors.ma5;
-    canvas.drawPath(ma5Path, linePaint);
-    linePaint.color = AppColors.ma10;
-    canvas.drawPath(ma10Path, linePaint);
-    linePaint.color = AppColors.ma20;
-    canvas.drawPath(ma20Path, linePaint);
+    for (final average in movingAverages) {
+      linePaint.color = average.color;
+      canvas.drawPath(averagePaths[average]!, linePaint);
+    }
+    if (showMacd) {
+      linePaint.color = AppColors.macdDiff;
+      canvas.drawPath(diffPath, linePaint);
+      linePaint.color = AppColors.macdDea;
+      canvas.drawPath(deaPath, linePaint);
+    }
+
+    var legendX = priceRect.left + 8;
+    for (final average in movingAverages) {
+      legendX = _drawLegendLabel(
+        canvas,
+        legendX,
+        10,
+        average.label,
+        average.color,
+      );
+    }
+    if (showVolume) {
+      _drawSectionLabel(canvas, priceRect.left + 6, volumeRect.top + 4, 'VOL');
+    }
+    if (showMacd) {
+      _drawSectionLabel(canvas, priceRect.left + 6, macdRect.top + 4, 'MACD');
+    }
 
     final lastBar = bars[viewEnd - 1];
     final lastCloseY = yForPrice(lastBar.close);
@@ -508,8 +691,8 @@ class _KlinePainter extends CustomPainter {
       ..color = AppColors.lineStrong
       ..strokeWidth = 0.9;
     canvas.drawLine(
-      Offset(chartRect.left, lastCloseY),
-      Offset(chartRect.right, lastCloseY),
+      Offset(priceRect.left, lastCloseY),
+      Offset(priceRect.right, lastCloseY),
       lastLinePaint,
     );
 
@@ -517,55 +700,106 @@ class _KlinePainter extends CustomPainter {
         selectedIndex! >= viewStart &&
         selectedIndex! < viewEnd) {
       final local = selectedIndex! - viewStart;
-      final centerX = chartRect.left + stride * local + stride / 2;
+      final centerX = priceRect.left + stride * local + stride / 2;
       final bar = bars[selectedIndex!];
       final crossPaint = Paint()
         ..color = AppColors.lineStrong
         ..strokeWidth = 0.9;
+      final crossBottom = showMacd
+          ? macdRect.bottom
+          : (showVolume ? volumeRect.bottom : priceRect.bottom);
       canvas.drawLine(
-        Offset(centerX, chartRect.top),
-        Offset(centerX, chartRect.bottom),
+        Offset(centerX, priceRect.top),
+        Offset(centerX, crossBottom),
         crossPaint,
       );
       canvas.drawLine(
-        Offset(chartRect.left, yForPrice(bar.close)),
-        Offset(chartRect.right, yForPrice(bar.close)),
+        Offset(priceRect.left, yForPrice(bar.close)),
+        Offset(priceRect.right, yForPrice(bar.close)),
         crossPaint,
       );
     }
 
-    _drawPriceLabel(canvas, chartRect.right + 8, chartRect.top, chartTop);
+    _drawPriceLabel(canvas, priceRect.right + 8, priceRect.top, chartTop);
     _drawPriceLabel(
       canvas,
-      chartRect.right + 8,
-      chartRect.center.dy - 8,
+      priceRect.right + 8,
+      priceRect.center.dy - 8,
       (chartTop + chartBottom) / 2,
     );
     _drawPriceLabel(
       canvas,
-      chartRect.right + 8,
-      chartRect.bottom - 16,
+      priceRect.right + 8,
+      priceRect.bottom - 16,
       chartBottom,
     );
 
+    final labelY =
+        (showMacd
+            ? macdRect.bottom
+            : (showVolume ? volumeRect.bottom : priceRect.bottom)) +
+        4;
+    _drawBottomLabel(canvas, priceRect.left, labelY, bars[viewStart].time);
     _drawBottomLabel(
       canvas,
-      chartRect.left,
-      chartRect.bottom + 4,
-      bars[viewStart].time,
-    );
-    _drawBottomLabel(
-      canvas,
-      chartRect.center.dx - 20,
-      chartRect.bottom + 4,
+      priceRect.center.dx - 20,
+      labelY,
       bars[(viewStart + viewEnd - 1) ~/ 2].time,
     );
     _drawBottomLabel(
       canvas,
-      chartRect.right - 50,
-      chartRect.bottom + 4,
+      priceRect.right - 50,
+      labelY,
       bars[viewEnd - 1].time,
     );
+  }
+
+  double? _movingAverageValue(SegmentBar bar, MovingAverageLine average) {
+    return switch (average) {
+      MovingAverageLine.ma5 => bar.ma5,
+      MovingAverageLine.ma10 => bar.ma10,
+      MovingAverageLine.ma20 => bar.ma20,
+      MovingAverageLine.ma30 => bar.ma30,
+      MovingAverageLine.ma60 => bar.ma60,
+      MovingAverageLine.ma120 => bar.ma120,
+    };
+  }
+
+  double _drawLegendLabel(
+    Canvas canvas,
+    double x,
+    double y,
+    String text,
+    Color color,
+  ) {
+    final painter = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: TextStyle(
+          color: color,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    painter.paint(canvas, Offset(x, y));
+    return x + painter.width + 10;
+  }
+
+  void _drawSectionLabel(Canvas canvas, double x, double y, String text) {
+    final painter = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: const TextStyle(
+          color: AppColors.textSecondary,
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    painter.paint(canvas, Offset(x, y));
   }
 
   void _drawPriceLabel(Canvas canvas, double x, double y, double price) {
@@ -595,7 +829,11 @@ class _KlinePainter extends CustomPainter {
     return oldDelegate.bars != bars ||
         oldDelegate.viewStart != viewStart ||
         oldDelegate.viewEnd != viewEnd ||
-        oldDelegate.selectedIndex != selectedIndex;
+        oldDelegate.selectedIndex != selectedIndex ||
+        oldDelegate.showVolume != showVolume ||
+        oldDelegate.showMacd != showMacd ||
+        oldDelegate.movingAverages.length != movingAverages.length ||
+        !oldDelegate.movingAverages.containsAll(movingAverages);
   }
 }
 

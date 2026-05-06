@@ -10,11 +10,19 @@ class AppColors {
   static const textSecondary = Color(0xFF6B6B6B);
   static const accent = Color(0xFF1B4D3E);
   static const accentSoft = Color(0xFFE5EEE9);
+  static const chartBackground = Color(0xFFFDFCF8);
+  static const chartShade = Color(0xFFF3F0E8);
   static const rise = Color(0xFFC2514B);
   static const fall = Color(0xFF3E6E61);
   static const ma5 = Color(0xFF4B5E7A);
   static const ma10 = Color(0xFF8A7252);
   static const ma20 = Color(0xFF60766E);
+  static const ma30 = Color(0xFF7A5A6B);
+  static const ma60 = Color(0xFFA06C2F);
+  static const ma120 = Color(0xFF445C46);
+  static const volume = Color(0xFF7B8794);
+  static const macdDiff = Color(0xFFB25D4A);
+  static const macdDea = Color(0xFF4E6E8A);
   static const danger = Color(0xFFB64942);
 }
 

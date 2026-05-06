@@ -21,6 +21,13 @@ class TrainingPage extends StatefulWidget {
 
 class _TrainingPageState extends State<TrainingPage> {
   late final TrainingSessionController _session;
+  final Set<MovingAverageLine> _movingAverages = {
+    MovingAverageLine.ma5,
+    MovingAverageLine.ma10,
+    MovingAverageLine.ma20,
+  };
+  bool _showVolume = true;
+  bool _showMacd = true;
   String? _feedback;
   Timer? _feedbackTimer;
 
@@ -163,6 +170,61 @@ class _TrainingPageState extends State<TrainingPage> {
                         child: KlineChart(
                           bars: _session.bars,
                           revealedCount: _session.revealedCount,
+                          movingAverages: _movingAverages,
+                          showVolume: _showVolume,
+                          showMacd: _showMacd,
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            ...MovingAverageLine.values.map(
+                              (line) => Padding(
+                                padding: const EdgeInsets.only(right: 8),
+                                child: _IndicatorChip(
+                                  label: line.label,
+                                  active: _movingAverages.contains(line),
+                                  color: line.color,
+                                  onPressed: () {
+                                    setState(() {
+                                      if (_movingAverages.contains(line)) {
+                                        _movingAverages.remove(line);
+                                      } else {
+                                        _movingAverages.add(line);
+                                      }
+                                    });
+                                  },
+                                ),
+                              ),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.only(right: 8),
+                              child: _IndicatorChip(
+                                label: 'VOL',
+                                active: _showVolume,
+                                color: AppColors.volume,
+                                onPressed: () {
+                                  setState(() {
+                                    _showVolume = !_showVolume;
+                                  });
+                                },
+                              ),
+                            ),
+                            _IndicatorChip(
+                              label: 'MACD',
+                              active: _showMacd,
+                              color: AppColors.macdDiff,
+                              onPressed: () {
+                                setState(() {
+                                  _showMacd = !_showMacd;
+                                });
+                              },
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -231,6 +293,17 @@ class _TrainingPageState extends State<TrainingPage> {
                             value: _session.pendingOrder == null
                                 ? '无'
                                 : _actionLabel(_session.pendingOrder!),
+                          ),
+                          InfoRow(
+                            label: '当前量能',
+                            value:
+                                '${(_session.currentBar.volume / 10000).toStringAsFixed(1)} 万',
+                          ),
+                          InfoRow(
+                            label: '当前换手',
+                            value: _session.currentBar.turnoverRate == null
+                                ? '—'
+                                : '${_session.currentBar.turnoverRate!.toStringAsFixed(2)}%',
                           ),
                         ],
                       ),
@@ -314,6 +387,48 @@ class _TrainingPageState extends State<TrainingPage> {
           ),
         );
       },
+    );
+  }
+}
+
+class _IndicatorChip extends StatelessWidget {
+  const _IndicatorChip({
+    required this.label,
+    required this.active,
+    required this.color,
+    required this.onPressed,
+  });
+
+  final String label;
+  final bool active;
+  final Color color;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return CupertinoButton(
+      padding: EdgeInsets.zero,
+      minimumSize: Size.zero,
+      onPressed: onPressed,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: active
+              ? color.withValues(alpha: 0.14)
+              : AppColors.surfaceMuted,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: active ? color : AppColors.line),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            color: active ? color : AppColors.textSecondary,
+          ),
+        ),
+      ),
     );
   }
 }

@@ -73,6 +73,8 @@ class BundleManifest {
 class BundleStock {
   const BundleStock({
     required this.symbol,
+    required this.code,
+    required this.exchange,
     required this.name,
     required this.period,
     required this.barCount,
@@ -80,6 +82,8 @@ class BundleStock {
   });
 
   final String symbol;
+  final String code;
+  final String exchange;
   final String name;
   final String period;
   final int barCount;
@@ -88,6 +92,8 @@ class BundleStock {
   factory BundleStock.fromJson(Map<String, dynamic> json) {
     return BundleStock(
       symbol: json['symbol'] as String? ?? '',
+      code: json['code'] as String? ?? '',
+      exchange: json['exchange'] as String? ?? '',
       name: json['name'] as String? ?? '',
       period: json['period'] as String? ?? '1d',
       barCount: (json['barCount'] as num?)?.toInt() ?? 0,
@@ -98,6 +104,8 @@ class BundleStock {
   Map<String, dynamic> toJson() {
     return {
       'symbol': symbol,
+      'code': code,
+      'exchange': exchange,
       'name': name,
       'period': period,
       'barCount': barCount,
@@ -133,7 +141,7 @@ class SegmentIndexEntry {
       symbol: json['symbol'] as String? ?? '',
       period: json['period'] as String? ?? '1d',
       path: json['path'] as String? ?? '',
-      contextBars: (json['contextBars'] as num?)?.toInt() ?? 30,
+      contextBars: (json['contextBars'] as num?)?.toInt() ?? 20,
       trainingBars: (json['trainingBars'] as num?)?.toInt() ?? 30,
       tags: _stringList(json['tags']),
       features: Map<String, dynamic>.from(json['features'] as Map? ?? const {}),
@@ -163,9 +171,13 @@ class SegmentBar {
     required this.close,
     required this.volume,
     required this.amount,
+    this.turnoverRate,
     this.ma5,
     this.ma10,
     this.ma20,
+    this.ma30,
+    this.ma60,
+    this.ma120,
     this.macdDiff,
     this.macdDea,
     this.macdHist,
@@ -178,9 +190,13 @@ class SegmentBar {
   final double close;
   final double volume;
   final double amount;
+  final double? turnoverRate;
   final double? ma5;
   final double? ma10;
   final double? ma20;
+  final double? ma30;
+  final double? ma60;
+  final double? ma120;
   final double? macdDiff;
   final double? macdDea;
   final double? macdHist;
@@ -194,9 +210,13 @@ class SegmentBar {
       close: _asDouble(json['close']),
       volume: _asDouble(json['volume']),
       amount: _asDouble(json['amount']),
+      turnoverRate: _asNullableDouble(json['turnoverRate']),
       ma5: _asNullableDouble(json['ma5']),
       ma10: _asNullableDouble(json['ma10']),
       ma20: _asNullableDouble(json['ma20']),
+      ma30: _asNullableDouble(json['ma30']),
+      ma60: _asNullableDouble(json['ma60']),
+      ma120: _asNullableDouble(json['ma120']),
       macdDiff: _asNullableDouble(json['macdDiff']),
       macdDea: _asNullableDouble(json['macdDea']),
       macdHist: _asNullableDouble(json['macdHist']),
@@ -212,9 +232,13 @@ class SegmentBar {
       'close': close,
       'volume': volume,
       'amount': amount,
+      'turnoverRate': turnoverRate,
       'ma5': ma5,
       'ma10': ma10,
       'ma20': ma20,
+      'ma30': ma30,
+      'ma60': ma60,
+      'ma120': ma120,
       'macdDiff': macdDiff,
       'macdDea': macdDea,
       'macdHist': macdHist,
@@ -245,7 +269,7 @@ class SegmentPayload {
       segmentId: json['segmentId'] as String? ?? '',
       symbol: json['symbol'] as String? ?? '',
       period: json['period'] as String? ?? '1d',
-      contextBars: (json['contextBars'] as num?)?.toInt() ?? 30,
+      contextBars: (json['contextBars'] as num?)?.toInt() ?? 20,
       trainingBars: (json['trainingBars'] as num?)?.toInt() ?? 30,
       bars: rawBars
           .map(

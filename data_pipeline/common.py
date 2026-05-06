@@ -11,8 +11,27 @@ import pandas as pd
 import yaml
 
 
-STANDARD_FIELDS = ["time", "open", "high", "low", "close", "volume", "amount"]
-INDICATOR_FIELDS = ["ma5", "ma10", "ma20", "macdDiff", "macdDea", "macdHist"]
+STANDARD_FIELDS = [
+    "time",
+    "open",
+    "high",
+    "low",
+    "close",
+    "volume",
+    "amount",
+    "turnoverRate",
+]
+INDICATOR_FIELDS = [
+    "ma5",
+    "ma10",
+    "ma20",
+    "ma30",
+    "ma60",
+    "ma120",
+    "macdDiff",
+    "macdDea",
+    "macdHist",
+]
 
 
 @dataclass
@@ -106,4 +125,3 @@ def compute_payload_hash(bundle_dir: Path) -> str:
         digest.update(file_path.read_bytes())
         digest.update(b"\0")
     return digest.hexdigest()
-
