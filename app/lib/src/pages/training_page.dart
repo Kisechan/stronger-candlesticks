@@ -478,16 +478,6 @@ class _TrainingPageState extends State<TrainingPage> {
                               ),
                             ],
                           ),
-                          const SizedBox(height: 8),
-                          SecondaryActionButton(
-                            label: '清仓',
-                            color: _session.canClear
-                                ? AppColors.danger
-                                : AppColors.textSecondary,
-                            onPressed: _session.canClear
-                                ? () => _showFeedback(_session.queueClear())
-                                : null,
-                          ),
                         ],
                       ),
                     ),
