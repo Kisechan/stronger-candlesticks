@@ -16,6 +16,10 @@ abstract class BundleRepository {
     String url, {
     required void Function(ImportProgress progress) onProgress,
   });
+  Future<BundleCatalog> importBundleFromArchiveFile(
+    String archivePath, {
+    required void Function(ImportProgress progress) onProgress,
+  });
   Future<BundleCatalog> seedDemoBundle();
   Future<void> selectBundle(String bundleId);
   Future<void> deleteBundle(String bundleId);
@@ -114,55 +118,25 @@ class LocalBundleRepository implements BundleRepository {
       }
 
       final archiveBytes = bytesBuilder.takeBytes();
-      final archive = ZipDecoder().decodeBytes(archiveBytes);
-      onProgress(
-        const ImportProgress.running(message: '正在校验文件结构', progress: 0.62),
+      final tempArchive = await _incomingArchiveFile();
+      await tempArchive.writeAsBytes(archiveBytes, flush: true);
+      return importBundleFromArchiveFile(
+        tempArchive.path,
+        onProgress: (progress) {
+          final mapped = progress.isRunning
+              ? ImportProgress.running(
+                  message: progress.message,
+                  progress: 0.55 + progress.progress * 0.45,
+                )
+              : progress.error != null
+              ? ImportProgress.failed(
+                  message: progress.message,
+                  error: progress.error!,
+                )
+              : ImportProgress.done(message: progress.message);
+          onProgress(mapped);
+        },
       );
-
-      final files = <String, ArchiveFile>{};
-      for (final file in archive.files) {
-        if (file.isFile) {
-          files[file.name] = file;
-        }
-      }
-
-      final manifest = _readArchiveDecoded(files, 'manifest.json');
-      final stocks = _readArchiveDecoded(files, 'stocks.json');
-      final segmentIndex = _readArchiveDecoded(files, 'segment_index.json');
-
-      if (manifest is! Map || segmentIndex is! List || stocks is! List) {
-        throw const FormatException('bundle 索引文件格式不正确');
-      }
-
-      final bundleId = manifest['bundleId'] as String? ?? 'imported_bundle';
-      final bundleDir = await _prepareBundleDirectory(bundleId: bundleId);
-      final persistedArchive = File('${bundleDir.path}/bundle.ktpkg');
-
-      onProgress(
-        const ImportProgress.running(message: '正在写入本地文件', progress: 0.76),
-      );
-      persistedArchive.writeAsBytesSync(archiveBytes, flush: true);
-      for (final file in archive.files) {
-        if (!file.isFile) {
-          continue;
-        }
-        final target = File('${bundleDir.path}/${file.name}');
-        target.parent.createSync(recursive: true);
-        target.writeAsBytesSync(file.content as List<int>, flush: true);
-      }
-
-      onProgress(
-        const ImportProgress.running(message: '正在整理训练索引', progress: 0.92),
-      );
-      final catalog = await _loadCatalogFromBundleDir(bundleDir);
-      _validateCatalog(catalog);
-      await _writeAppState({
-        'currentBundleId': catalog.manifest.bundleId,
-        'latestResult': (await loadLatestResult())?.toJson(),
-      });
-
-      onProgress(const ImportProgress.done(message: '导入完成'));
-      return catalog;
     } on SocketException catch (error) {
       throw Exception(_describeSocketException(error, uri));
     } on TimeoutException {
@@ -174,6 +148,67 @@ class LocalBundleRepository implements BundleRepository {
     } finally {
       client.close(force: true);
     }
+  }
+
+  @override
+  Future<BundleCatalog> importBundleFromArchiveFile(
+    String archivePath, {
+    required void Function(ImportProgress progress) onProgress,
+  }) async {
+    final sourceArchive = File(archivePath);
+    if (!sourceArchive.existsSync()) {
+      throw Exception('下载结果不存在，无法导入数据包');
+    }
+
+    onProgress(
+      const ImportProgress.running(message: '正在校验文件结构', progress: 0.1),
+    );
+
+    final archiveBytes = await sourceArchive.readAsBytes();
+    final archive = ZipDecoder().decodeBytes(archiveBytes);
+    final files = <String, ArchiveFile>{};
+    for (final file in archive.files) {
+      if (file.isFile) {
+        files[file.name] = file;
+      }
+    }
+
+    final manifest = _readArchiveDecoded(files, 'manifest.json');
+    final stocks = _readArchiveDecoded(files, 'stocks.json');
+    final segmentIndex = _readArchiveDecoded(files, 'segment_index.json');
+    if (manifest is! Map || segmentIndex is! List || stocks is! List) {
+      throw const FormatException('bundle 索引文件格式不正确');
+    }
+
+    final bundleId = manifest['bundleId'] as String? ?? 'imported_bundle';
+    final bundleDir = await _prepareBundleDirectory(bundleId: bundleId);
+    final persistedArchive = File('${bundleDir.path}/bundle.ktpkg');
+
+    onProgress(
+      const ImportProgress.running(message: '正在写入本地索引', progress: 0.48),
+    );
+    await persistedArchive.writeAsBytes(archiveBytes, flush: true);
+    _writeArchiveFile(files, 'manifest.json', bundleDir.path);
+    _writeArchiveFile(files, 'stocks.json', bundleDir.path);
+    _writeArchiveFile(files, 'segment_index.json', bundleDir.path);
+
+    onProgress(
+      const ImportProgress.running(message: '正在整理训练索引', progress: 0.82),
+    );
+    final catalog = await _loadCatalogFromBundleDir(bundleDir);
+    _validateCatalog(catalog);
+
+    final state = await _readAppState();
+    state['currentBundleId'] = catalog.manifest.bundleId;
+    await _writeAppState(state);
+
+    if (sourceArchive.path != persistedArchive.path &&
+        sourceArchive.existsSync()) {
+      sourceArchive.deleteSync();
+    }
+
+    onProgress(const ImportProgress.done(message: '导入完成'));
+    return catalog;
   }
 
   @override
@@ -310,6 +345,15 @@ class LocalBundleRepository implements BundleRepository {
     return File('${dir.path}/$_stateFileName');
   }
 
+  Future<File> _incomingArchiveFile() async {
+    final supportDir = await getApplicationSupportDirectory();
+    final dir = Directory('${supportDir.path}/kline_training/incoming');
+    if (!dir.existsSync()) {
+      dir.createSync(recursive: true);
+    }
+    return File('${dir.path}/bundle_download.ktpkg');
+  }
+
   Future<Map<String, dynamic>> _readAppState() async {
     final file = await _stateFile();
     if (!file.existsSync()) {
@@ -367,6 +411,23 @@ class LocalBundleRepository implements BundleRepository {
 
     final bytes = Uint8List.fromList(file.content as List<int>);
     return jsonDecode(utf8.decode(bytes));
+  }
+
+  void _writeArchiveFile(
+    Map<String, ArchiveFile> files,
+    String relativePath,
+    String bundleRootPath,
+  ) {
+    final file = files[relativePath];
+    if (file == null) {
+      throw FormatException('bundle 缺少 $relativePath');
+    }
+    final target = File('$bundleRootPath/$relativePath');
+    target.parent.createSync(recursive: true);
+    target.writeAsBytesSync(
+      Uint8List.fromList(file.content as List<int>),
+      flush: true,
+    );
   }
 
   void _validateCatalog(BundleCatalog catalog) {
@@ -435,6 +496,19 @@ class MemoryBundleRepository implements BundleRepository {
   @override
   Future<BundleCatalog> importBundleFromUrl(
     String url, {
+    required void Function(ImportProgress progress) onProgress,
+  }) async {
+    onProgress(
+      const ImportProgress.running(message: '测试仓库不支持真实导入', progress: 0.2),
+    );
+    final result = await seedDemoBundle();
+    onProgress(const ImportProgress.done(message: '已加载演示数据'));
+    return result;
+  }
+
+  @override
+  Future<BundleCatalog> importBundleFromArchiveFile(
+    String archivePath, {
     required void Function(ImportProgress progress) onProgress,
   }) async {
     onProgress(

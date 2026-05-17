@@ -26,8 +26,8 @@ class _TrainingPageState extends State<TrainingPage> {
     MovingAverageLine.ma10,
     MovingAverageLine.ma20,
   };
-  bool _showVolume = true;
-  bool _showMacd = true;
+  _SecondaryPaneMode _secondaryPaneMode = _SecondaryPaneMode.both;
+  bool _showAccountPanel = false;
   String? _feedback;
   Timer? _feedbackTimer;
 
@@ -113,6 +113,14 @@ class _TrainingPageState extends State<TrainingPage> {
     final returnColor = _session.floatingReturnPct >= 0
         ? AppColors.accent
         : AppColors.danger;
+    final showVolume = switch (_secondaryPaneMode) {
+      _SecondaryPaneMode.volume || _SecondaryPaneMode.both => true,
+      _ => false,
+    };
+    final showMacd = switch (_secondaryPaneMode) {
+      _SecondaryPaneMode.macd || _SecondaryPaneMode.both => true,
+      _ => false,
+    };
 
     return AnimatedBuilder(
       animation: _session,
@@ -165,145 +173,255 @@ class _TrainingPageState extends State<TrainingPage> {
                     ),
                     const SizedBox(height: 10),
                     Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 14),
-                        child: KlineChart(
-                          bars: _session.bars,
-                          revealedCount: _session.revealedCount,
-                          movingAverages: _movingAverages,
-                          showVolume: _showVolume,
-                          showMacd: _showMacd,
-                        ),
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          children: [
-                            ...MovingAverageLine.values.map(
-                              (line) => Padding(
-                                padding: const EdgeInsets.only(right: 8),
-                                child: _IndicatorChip(
-                                  label: line.label,
-                                  active: _movingAverages.contains(line),
-                                  color: line.color,
-                                  onPressed: () {
+                      child: Column(
+                        children: [
+                          Expanded(
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                              ),
+                              child: KlineChart(
+                                bars: _session.bars,
+                                revealedCount: _session.revealedCount,
+                                movingAverages: _movingAverages,
+                                showVolume: showVolume,
+                                showMacd: showMacd,
+                              ),
+                            ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  '图表调节',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.textSecondary,
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                CupertinoSlidingSegmentedControl<
+                                  _SecondaryPaneMode
+                                >(
+                                  groupValue: _secondaryPaneMode,
+                                  thumbColor: AppColors.surface,
+                                  backgroundColor: AppColors.surfaceMuted,
+                                  children: const {
+                                    _SecondaryPaneMode.none: Padding(
+                                      padding: EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 8,
+                                      ),
+                                      child: Text('主图'),
+                                    ),
+                                    _SecondaryPaneMode.volume: Padding(
+                                      padding: EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 8,
+                                      ),
+                                      child: Text('VOL'),
+                                    ),
+                                    _SecondaryPaneMode.macd: Padding(
+                                      padding: EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 8,
+                                      ),
+                                      child: Text('MACD'),
+                                    ),
+                                    _SecondaryPaneMode.both: Padding(
+                                      padding: EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 8,
+                                      ),
+                                      child: Text('VOL+MACD'),
+                                    ),
+                                  },
+                                  onValueChanged: (value) {
+                                    if (value == null) {
+                                      return;
+                                    }
                                     setState(() {
-                                      if (_movingAverages.contains(line)) {
-                                        _movingAverages.remove(line);
-                                      } else {
-                                        _movingAverages.add(line);
-                                      }
+                                      _secondaryPaneMode = value;
                                     });
                                   },
                                 ),
-                              ),
+                                const SizedBox(height: 10),
+                                SingleChildScrollView(
+                                  scrollDirection: Axis.horizontal,
+                                  child: Row(
+                                    children: [
+                                      ...MovingAverageLine.values.map(
+                                        (line) => Padding(
+                                          padding: const EdgeInsets.only(
+                                            right: 8,
+                                          ),
+                                          child: _IndicatorChip(
+                                            label: line.label,
+                                            active: _movingAverages.contains(
+                                              line,
+                                            ),
+                                            color: line.color,
+                                            onPressed: () {
+                                              setState(() {
+                                                if (_movingAverages.contains(
+                                                  line,
+                                                )) {
+                                                  _movingAverages.remove(line);
+                                                } else {
+                                                  _movingAverages.add(line);
+                                                }
+                                              });
+                                            },
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
                             ),
-                            Padding(
-                              padding: const EdgeInsets.only(right: 8),
-                              child: _IndicatorChip(
-                                label: 'VOL',
-                                active: _showVolume,
-                                color: AppColors.volume,
-                                onPressed: () {
-                                  setState(() {
-                                    _showVolume = !_showVolume;
-                                  });
-                                },
-                              ),
-                            ),
-                            _IndicatorChip(
-                              label: 'MACD',
-                              active: _showMacd,
-                              color: AppColors.macdDiff,
-                              onPressed: () {
-                                setState(() {
-                                  _showMacd = !_showMacd;
-                                });
-                              },
-                            ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     ),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
                       child: SectionSurface(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 18,
+                          vertical: 16,
+                        ),
                         children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const Text(
-                                      '当前权益',
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        color: AppColors.textSecondary,
+                          CupertinoButton(
+                            padding: EdgeInsets.zero,
+                            onPressed: () {
+                              setState(() {
+                                _showAccountPanel = !_showAccountPanel;
+                              });
+                            },
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      const Text(
+                                        '当前权益',
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          color: AppColors.textSecondary,
+                                        ),
                                       ),
-                                    ),
-                                    const SizedBox(height: 4),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        _session.currentEquity.toStringAsFixed(
+                                          2,
+                                        ),
+                                        style: const TextStyle(
+                                          fontSize: 25,
+                                          fontWeight: FontWeight.w700,
+                                          color: AppColors.textPrimary,
+                                          fontFeatures: [
+                                            FontFeature.tabularFigures(),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
                                     Text(
-                                      _session.currentEquity.toStringAsFixed(2),
-                                      style: const TextStyle(
-                                        fontSize: 25,
+                                      '${_session.floatingReturnPct >= 0 ? '+' : ''}${_session.floatingReturnPct.toStringAsFixed(2)}%',
+                                      style: TextStyle(
+                                        fontSize: 21,
                                         fontWeight: FontWeight.w700,
-                                        fontFeatures: [
+                                        color: returnColor,
+                                        fontFeatures: const [
                                           FontFeature.tabularFigures(),
                                         ],
                                       ),
                                     ),
+                                    const SizedBox(height: 6),
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          _showAccountPanel ? '收起明细' : '展开明细',
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            color: AppColors.textSecondary,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Icon(
+                                          _showAccountPanel
+                                              ? CupertinoIcons.chevron_up
+                                              : CupertinoIcons.chevron_down,
+                                          size: 14,
+                                          color: AppColors.textSecondary,
+                                        ),
+                                      ],
+                                    ),
                                   ],
                                 ),
-                              ),
-                              Text(
-                                '${_session.floatingReturnPct >= 0 ? '+' : ''}${_session.floatingReturnPct.toStringAsFixed(2)}%',
-                                style: TextStyle(
-                                  fontSize: 21,
-                                  fontWeight: FontWeight.w700,
-                                  color: returnColor,
-                                  fontFeatures: const [
-                                    FontFeature.tabularFigures(),
-                                  ],
-                                ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
-                          InfoRow(
-                            label: '现金',
-                            value: _session.cash.toStringAsFixed(2),
-                          ),
-                          InfoRow(
-                            label: '持仓',
-                            value: _session.shares > 0
-                                ? _session.shares.toStringAsFixed(2)
-                                : '0',
-                          ),
-                          InfoRow(
-                            label: '持仓均价',
-                            value: _session.averageCost > 0
-                                ? _session.averageCost.toStringAsFixed(2)
-                                : '—',
-                          ),
-                          InfoRow(
-                            label: '待执行',
-                            value: _session.pendingOrder == null
-                                ? '无'
-                                : _actionLabel(_session.pendingOrder!),
-                          ),
-                          InfoRow(
-                            label: '当前量能',
-                            value:
-                                '${(_session.currentBar.volume / 10000).toStringAsFixed(1)} 万',
-                          ),
-                          InfoRow(
-                            label: '当前换手',
-                            value: _session.currentBar.turnoverRate == null
-                                ? '—'
-                                : '${_session.currentBar.turnoverRate!.toStringAsFixed(2)}%',
+                          AnimatedSize(
+                            duration: const Duration(milliseconds: 220),
+                            alignment: Alignment.topCenter,
+                            curve: Curves.easeOutCubic,
+                            child: _showAccountPanel
+                                ? Column(
+                                    children: [
+                                      const SizedBox(height: 2),
+                                      InfoRow(
+                                        label: '现金',
+                                        value: _session.cash.toStringAsFixed(2),
+                                      ),
+                                      InfoRow(
+                                        label: '持仓',
+                                        value: _session.shares > 0
+                                            ? _session.shares.toStringAsFixed(2)
+                                            : '0',
+                                      ),
+                                      InfoRow(
+                                        label: '持仓均价',
+                                        value: _session.averageCost > 0
+                                            ? _session.averageCost
+                                                  .toStringAsFixed(2)
+                                            : '—',
+                                      ),
+                                      InfoRow(
+                                        label: '待执行',
+                                        value: _session.pendingOrder == null
+                                            ? '无'
+                                            : _actionLabel(
+                                                _session.pendingOrder!,
+                                              ),
+                                      ),
+                                      InfoRow(
+                                        label: '当前量能',
+                                        value:
+                                            '${(_session.currentBar.volume / 10000).toStringAsFixed(1)} 万',
+                                      ),
+                                      InfoRow(
+                                        label: '当前换手',
+                                        value:
+                                            _session.currentBar.turnoverRate ==
+                                                null
+                                            ? '—'
+                                            : '${_session.currentBar.turnoverRate!.toStringAsFixed(2)}%',
+                                      ),
+                                    ],
+                                  )
+                                : const SizedBox.shrink(),
                           ),
                         ],
                       ),
@@ -432,6 +550,8 @@ class _IndicatorChip extends StatelessWidget {
     );
   }
 }
+
+enum _SecondaryPaneMode { none, volume, macd, both }
 
 class _ActionTile extends StatelessWidget {
   const _ActionTile({

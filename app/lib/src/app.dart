@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:math';
 
+import 'package:background_downloader/background_downloader.dart';
 import 'package:flutter/cupertino.dart';
 
 import 'models.dart';
@@ -23,6 +25,12 @@ class _KlineTrainingAppState extends State<KlineTrainingApp> {
   void initState() {
     super.initState();
     _controller = AppController(widget.repository)..bootstrap();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
   }
 
   @override
@@ -55,10 +63,15 @@ class _AppShell extends StatelessWidget {
 }
 
 class AppController extends ChangeNotifier {
-  AppController(this._repository);
+  AppController(this._repository) {
+    _downloadSubscription = FileDownloader().updates.listen(
+      _handleDownloadUpdate,
+    );
+  }
 
   final BundleRepository _repository;
   final Random _random = Random();
+  StreamSubscription<TaskUpdate>? _downloadSubscription;
 
   bool _isBootstrapping = true;
   List<BundleCatalog> _bundles = const [];
@@ -66,6 +79,8 @@ class AppController extends ChangeNotifier {
   TrainingResult? _latestResult;
   ImportProgress _importProgress = const ImportProgress.idle();
   String? _errorMessage;
+  String? _activeDownloadTaskId;
+  bool _isImportingDownloadedArchive = false;
 
   bool get isBootstrapping => _isBootstrapping;
   List<BundleCatalog> get bundles => List.unmodifiable(_bundles);
@@ -94,30 +109,162 @@ class AppController extends ChangeNotifier {
 
   Future<void> importFromUrl(String url) async {
     _errorMessage = null;
+    final uri = _normalizeRemoteBundleUri(url);
+    final taskId = 'bundle-${DateTime.now().millisecondsSinceEpoch}';
+    final task = DownloadTask(
+      taskId: taskId,
+      url: uri.toString(),
+      filename: '$taskId.ktpkg',
+      baseDirectory: BaseDirectory.applicationSupport,
+      directory: 'kline_training/incoming',
+      updates: Updates.statusAndProgress,
+    );
+
+    _activeDownloadTaskId = taskId;
+    _isImportingDownloadedArchive = false;
     _importProgress = const ImportProgress.running(
-      message: '准备导入',
-      progress: 0.02,
+      message: '下载任务已加入队列，切到后台也会继续',
+      progress: 0.03,
     );
     notifyListeners();
 
     try {
-      _catalog = await _repository.importBundleFromUrl(
-        url,
-        onProgress: (progress) {
-          _importProgress = progress;
-          notifyListeners();
-        },
-      );
-      _bundles = await _repository.loadBundles();
-      _importProgress = const ImportProgress.done(message: '导入完成');
+      final enqueued = await FileDownloader().enqueue(task);
+      if (!enqueued) {
+        throw Exception('后台下载任务创建失败');
+      }
     } catch (error) {
+      _activeDownloadTaskId = null;
       _importProgress = ImportProgress.failed(
         message: '导入失败',
         error: error.toString(),
       );
       _errorMessage = error.toString();
+      notifyListeners();
     }
-    notifyListeners();
+  }
+
+  Future<void> _handleDownloadUpdate(TaskUpdate update) async {
+    if (update.task.taskId != _activeDownloadTaskId) {
+      return;
+    }
+
+    switch (update) {
+      case TaskProgressUpdate():
+        final rawProgress = update.progress.isFinite ? update.progress : 0.0;
+        _importProgress = ImportProgress.running(
+          message: '正在下载数据包',
+          progress: (0.06 + rawProgress.clamp(0.0, 1.0) * 0.62).clamp(
+            0.06,
+            0.68,
+          ),
+        );
+        notifyListeners();
+      case TaskStatusUpdate():
+        await _handleDownloadStatusUpdate(update);
+    }
+  }
+
+  Future<void> _handleDownloadStatusUpdate(TaskStatusUpdate update) async {
+    switch (update.status) {
+      case TaskStatus.running:
+      case TaskStatus.enqueued:
+        _importProgress = const ImportProgress.running(
+          message: '后台下载中，切到后台也会继续',
+          progress: 0.05,
+        );
+        notifyListeners();
+      case TaskStatus.complete:
+        if (_isImportingDownloadedArchive) {
+          return;
+        }
+        _isImportingDownloadedArchive = true;
+        _importProgress = const ImportProgress.running(
+          message: '下载完成，正在导入本地数据',
+          progress: 0.72,
+        );
+        notifyListeners();
+        try {
+          final archivePath = await update.task.filePath();
+          _catalog = await _repository.importBundleFromArchiveFile(
+            archivePath,
+            onProgress: (progress) {
+              if (progress.isRunning) {
+                _importProgress = ImportProgress.running(
+                  message: progress.message,
+                  progress: 0.72 + progress.progress * 0.28,
+                );
+              } else if (progress.error != null) {
+                _importProgress = ImportProgress.failed(
+                  message: progress.message,
+                  error: progress.error!,
+                );
+              } else {
+                _importProgress = ImportProgress.done(
+                  message: progress.message,
+                );
+              }
+              notifyListeners();
+            },
+          );
+          _bundles = await _repository.loadBundles();
+          _importProgress = const ImportProgress.done(message: '导入完成');
+          _activeDownloadTaskId = null;
+          _isImportingDownloadedArchive = false;
+          notifyListeners();
+        } catch (error) {
+          _activeDownloadTaskId = null;
+          _isImportingDownloadedArchive = false;
+          _importProgress = ImportProgress.failed(
+            message: '导入失败',
+            error: error.toString(),
+          );
+          _errorMessage = error.toString();
+          notifyListeners();
+        }
+      case TaskStatus.failed:
+        _activeDownloadTaskId = null;
+        _isImportingDownloadedArchive = false;
+        _importProgress = ImportProgress.failed(
+          message: '导入失败',
+          error: update.exception?.description ?? '下载失败，请检查地址和网络',
+        );
+        _errorMessage = _importProgress.error;
+        notifyListeners();
+      case TaskStatus.canceled:
+      case TaskStatus.notFound:
+        _activeDownloadTaskId = null;
+        _isImportingDownloadedArchive = false;
+        _importProgress = ImportProgress.failed(
+          message: '导入失败',
+          error: '下载任务未完成或已被取消',
+        );
+        _errorMessage = _importProgress.error;
+        notifyListeners();
+      default:
+        break;
+    }
+  }
+
+  Uri _normalizeRemoteBundleUri(String rawUrl) {
+    final trimmed = rawUrl.trim();
+    final uri = Uri.parse(trimmed);
+    if (!uri.hasScheme) {
+      throw const FormatException('URL 缺少协议头，请使用 http:// 或 https://');
+    }
+    if (uri.scheme != 'http' && uri.scheme != 'https') {
+      throw const FormatException('仅支持 http:// 或 https:// 下载地址');
+    }
+    if (uri.host.isEmpty) {
+      throw const FormatException('URL 缺少主机名');
+    }
+    return uri;
+  }
+
+  @override
+  void dispose() {
+    _downloadSubscription?.cancel();
+    super.dispose();
   }
 
   Future<void> loadDemoBundle() async {

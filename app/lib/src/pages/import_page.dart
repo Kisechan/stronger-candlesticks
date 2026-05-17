@@ -51,7 +51,7 @@ class _ImportPageState extends State<ImportPage> {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  '建议使用一个可直接访问的 URL。导入时 App 会下载 zip、解析 manifest、保存 segment 文件，并把这个 bundle 加入本地仓库，不会覆盖其他 bundle。',
+                  '建议使用一个可直接访问的 URL。首次导入依赖联网下载，任务会进入后台队列，切到后台也能继续。导入时 App 会保存 bundle 原包和核心索引，训练时再按需读取 segment，避免本地空间继续膨胀。',
                   style: TextStyle(
                     fontSize: 14,
                     height: 1.45,

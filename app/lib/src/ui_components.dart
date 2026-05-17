@@ -54,15 +54,18 @@ class InfoRow extends StatelessWidget {
     required this.label,
     required this.value,
     this.valueColor,
+    this.multiline = true,
   });
 
   final String label;
   final String value;
   final Color? valueColor;
+  final bool multiline;
 
   @override
   Widget build(BuildContext context) {
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Expanded(
           child: Text(
@@ -73,12 +76,20 @@ class InfoRow extends StatelessWidget {
             ),
           ),
         ),
-        Text(
-          value,
-          style: TextStyle(
-            color: valueColor ?? AppColors.textPrimary,
-            fontSize: 15,
-            fontWeight: FontWeight.w600,
+        const SizedBox(width: 16),
+        Flexible(
+          flex: 2,
+          child: Text(
+            value,
+            textAlign: TextAlign.right,
+            softWrap: multiline,
+            maxLines: multiline ? null : 1,
+            overflow: multiline ? TextOverflow.visible : TextOverflow.ellipsis,
+            style: TextStyle(
+              color: valueColor ?? AppColors.textPrimary,
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ),
       ],
