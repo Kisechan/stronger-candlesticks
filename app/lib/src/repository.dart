@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
@@ -28,6 +29,7 @@ abstract class BundleRepository {
 
 class LocalBundleRepository implements BundleRepository {
   static const _stateFileName = 'app_state.json';
+  static const _requestTimeout = Duration(seconds: 20);
 
   @override
   Future<BundleCatalog?> loadCurrentBundle() async {
@@ -84,81 +86,94 @@ class LocalBundleRepository implements BundleRepository {
       const ImportProgress.running(message: '正在连接数据源', progress: 0.04),
     );
 
-    final uri = Uri.parse(url);
-    final client = HttpClient();
-    final request = await client.getUrl(uri);
-    final response = await request.close();
+    final uri = _normalizeBundleUri(url);
+    final client = HttpClient()..connectionTimeout = _requestTimeout;
 
-    if (response.statusCode >= 400) {
-      throw HttpException('下载失败，HTTP ${response.statusCode}', uri: uri);
-    }
+    try {
+      final request = await client.getUrl(uri).timeout(_requestTimeout);
+      final response = await request.close().timeout(_requestTimeout);
 
-    final bytesBuilder = BytesBuilder(copy: false);
-    var received = 0;
-    final expected = response.contentLength;
+      if (response.statusCode >= 400) {
+        throw HttpException('下载失败，HTTP ${response.statusCode}', uri: uri);
+      }
 
-    await for (final chunk in response) {
-      bytesBuilder.add(chunk);
-      received += chunk.length;
-      final ratio = expected > 0 ? received / expected : 0.22;
+      final bytesBuilder = BytesBuilder(copy: false);
+      var received = 0;
+      final expected = response.contentLength;
+
+      await for (final chunk in response.timeout(_requestTimeout)) {
+        bytesBuilder.add(chunk);
+        received += chunk.length;
+        final ratio = expected > 0 ? received / expected : 0.22;
+        onProgress(
+          ImportProgress.running(
+            message: '正在下载数据包',
+            progress: ratio.clamp(0.05, 0.55),
+          ),
+        );
+      }
+
+      final archiveBytes = bytesBuilder.takeBytes();
+      final archive = ZipDecoder().decodeBytes(archiveBytes);
       onProgress(
-        ImportProgress.running(
-          message: '正在下载数据包',
-          progress: ratio.clamp(0.05, 0.55),
-        ),
+        const ImportProgress.running(message: '正在校验文件结构', progress: 0.62),
       );
-    }
 
-    final archiveBytes = bytesBuilder.takeBytes();
-    final archive = ZipDecoder().decodeBytes(archiveBytes);
-    onProgress(
-      const ImportProgress.running(message: '正在校验文件结构', progress: 0.62),
-    );
-
-    final files = <String, ArchiveFile>{};
-    for (final file in archive.files) {
-      if (file.isFile) {
-        files[file.name] = file;
+      final files = <String, ArchiveFile>{};
+      for (final file in archive.files) {
+        if (file.isFile) {
+          files[file.name] = file;
+        }
       }
-    }
 
-    final manifest = _readArchiveDecoded(files, 'manifest.json');
-    final stocks = _readArchiveDecoded(files, 'stocks.json');
-    final segmentIndex = _readArchiveDecoded(files, 'segment_index.json');
+      final manifest = _readArchiveDecoded(files, 'manifest.json');
+      final stocks = _readArchiveDecoded(files, 'stocks.json');
+      final segmentIndex = _readArchiveDecoded(files, 'segment_index.json');
 
-    if (manifest is! Map || segmentIndex is! List || stocks is! List) {
-      throw const FormatException('bundle 索引文件格式不正确');
-    }
-
-    final bundleId = manifest['bundleId'] as String? ?? 'imported_bundle';
-    final bundleDir = await _prepareBundleDirectory(bundleId: bundleId);
-    final persistedArchive = File('${bundleDir.path}/bundle.ktpkg');
-
-    onProgress(
-      const ImportProgress.running(message: '正在写入本地文件', progress: 0.76),
-    );
-    persistedArchive.writeAsBytesSync(archiveBytes, flush: true);
-    for (final file in archive.files) {
-      if (!file.isFile) {
-        continue;
+      if (manifest is! Map || segmentIndex is! List || stocks is! List) {
+        throw const FormatException('bundle 索引文件格式不正确');
       }
-      final target = File('${bundleDir.path}/${file.name}');
-      target.parent.createSync(recursive: true);
-      target.writeAsBytesSync(file.content as List<int>, flush: true);
+
+      final bundleId = manifest['bundleId'] as String? ?? 'imported_bundle';
+      final bundleDir = await _prepareBundleDirectory(bundleId: bundleId);
+      final persistedArchive = File('${bundleDir.path}/bundle.ktpkg');
+
+      onProgress(
+        const ImportProgress.running(message: '正在写入本地文件', progress: 0.76),
+      );
+      persistedArchive.writeAsBytesSync(archiveBytes, flush: true);
+      for (final file in archive.files) {
+        if (!file.isFile) {
+          continue;
+        }
+        final target = File('${bundleDir.path}/${file.name}');
+        target.parent.createSync(recursive: true);
+        target.writeAsBytesSync(file.content as List<int>, flush: true);
+      }
+
+      onProgress(
+        const ImportProgress.running(message: '正在整理训练索引', progress: 0.92),
+      );
+      final catalog = await _loadCatalogFromBundleDir(bundleDir);
+      _validateCatalog(catalog);
+      await _writeAppState({
+        'currentBundleId': catalog.manifest.bundleId,
+        'latestResult': (await loadLatestResult())?.toJson(),
+      });
+
+      onProgress(const ImportProgress.done(message: '导入完成'));
+      return catalog;
+    } on SocketException catch (error) {
+      throw Exception(_describeSocketException(error, uri));
+    } on TimeoutException {
+      throw Exception('连接超时，请检查网络、域名可达性或稍后重试');
+    } on FormatException catch (error) {
+      throw Exception('数据包格式错误：${error.message}');
+    } on HttpException catch (error) {
+      throw Exception(error.message);
+    } finally {
+      client.close(force: true);
     }
-
-    onProgress(
-      const ImportProgress.running(message: '正在整理训练索引', progress: 0.92),
-    );
-    final catalog = await _loadCatalogFromBundleDir(bundleDir);
-    _validateCatalog(catalog);
-    await _writeAppState({
-      'currentBundleId': catalog.manifest.bundleId,
-      'latestResult': (await loadLatestResult())?.toJson(),
-    });
-
-    onProgress(const ImportProgress.done(message: '导入完成'));
-    return catalog;
   }
 
   @override
@@ -361,6 +376,37 @@ class LocalBundleRepository implements BundleRepository {
     if (catalog.manifest.segmentCount != catalog.segments.length) {
       throw const FormatException('bundle segment 索引数量不一致');
     }
+  }
+
+  Uri _normalizeBundleUri(String rawUrl) {
+    final trimmed = rawUrl.trim();
+    final uri = Uri.parse(trimmed);
+    if (!uri.hasScheme) {
+      throw const FormatException('URL 缺少协议头，请使用 http:// 或 https://');
+    }
+    if (uri.scheme != 'http' && uri.scheme != 'https') {
+      throw const FormatException('仅支持 http:// 或 https:// 下载地址');
+    }
+    if (uri.host.isEmpty) {
+      throw const FormatException('URL 缺少主机名');
+    }
+    return uri;
+  }
+
+  String _describeSocketException(SocketException error, Uri uri) {
+    final message = error.message.toLowerCase();
+    if (message.contains('failed host lookup') ||
+        message.contains('no address associated with hostname') ||
+        error.osError?.errorCode == 7) {
+      return '域名解析失败：${uri.host}。请检查域名是否有效、手机网络是否可用，或尝试改用 https:// 地址';
+    }
+    if (message.contains('network is unreachable')) {
+      return '当前网络不可达，请检查手机是否联网';
+    }
+    if (message.contains('connection refused')) {
+      return '目标服务器拒绝连接，请检查服务端是否已启动';
+    }
+    return '网络连接失败：${error.message}';
   }
 }
 

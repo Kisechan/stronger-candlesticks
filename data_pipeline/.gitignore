@@ -9,4 +9,4 @@ workspace/
 *.zip
 *.log
 
-*csv
+stock_pool.csv
