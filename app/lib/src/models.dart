@@ -348,7 +348,7 @@ class BundleCatalog {
   }
 }
 
-enum TrainingAction { buy, sell, clear }
+enum TrainingAction { buy, sell }
 
 class TrainingTrade {
   const TrainingTrade({
@@ -376,11 +376,13 @@ class TrainingTrade {
   }
 
   factory TrainingTrade.fromJson(Map<String, dynamic> json) {
+    final rawAction = json['action'] as String?;
     return TrainingTrade(
-      action: TrainingAction.values.firstWhere(
-        (value) => value.name == json['action'],
-        orElse: () => TrainingAction.buy,
-      ),
+      action: switch (rawAction) {
+        'buy' => TrainingAction.buy,
+        'sell' || 'clear' => TrainingAction.sell,
+        _ => TrainingAction.buy,
+      },
       barIndex: (json['barIndex'] as num?)?.toInt() ?? 0,
       time: json['time'] as String? ?? '',
       price: _asDouble(json['price']),

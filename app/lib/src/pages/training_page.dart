@@ -585,6 +585,5 @@ String _actionLabel(TrainingAction action) {
   return switch (action) {
     TrainingAction.buy => '买入',
     TrainingAction.sell => '卖出',
-    TrainingAction.clear => '清仓',
   };
 }

@@ -41,7 +41,6 @@ class TrainingSessionController extends ChangeNotifier {
   bool get canAdvance => _revealedCount < bars.length;
   bool get canBuy => canAdvance && !hasPosition && _pendingOrder == null;
   bool get canSell => canAdvance && hasPosition && _pendingOrder == null;
-  bool get canClear => canSell;
   SegmentBar get currentBar => bars[_revealedCount - 1];
   double get currentEquity => _cash + _shares * currentBar.close;
   double get floatingReturnPct => initialCash == 0
@@ -65,15 +64,6 @@ class TrainingSessionController extends ChangeNotifier {
     _pendingOrder = TrainingAction.sell;
     notifyListeners();
     return '已提交卖出，将于下一根开盘成交';
-  }
-
-  String queueClear() {
-    if (!canClear) {
-      return '当前没有可清仓的持仓';
-    }
-    _pendingOrder = TrainingAction.clear;
-    notifyListeners();
-    return '已提交清仓，将于下一根开盘成交';
   }
 
   String advance() {
@@ -136,7 +126,6 @@ class TrainingSessionController extends ChangeNotifier {
         );
         return '已按下一根开盘价买入';
       case TrainingAction.sell:
-      case TrainingAction.clear:
         _cash += _shares * executionPrice;
         _shares = 0;
         _averageCost = 0;
@@ -149,9 +138,7 @@ class TrainingSessionController extends ChangeNotifier {
             equityAfter: _cash,
           ),
         );
-        return _pendingOrder == TrainingAction.clear
-            ? '已按下一根开盘价清仓'
-            : '已按下一根开盘价卖出';
+        return '已按下一根开盘价卖出';
       case null:
         return '';
     }

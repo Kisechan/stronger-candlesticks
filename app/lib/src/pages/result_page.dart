@@ -58,7 +58,7 @@ class ResultPage extends StatelessWidget {
                 ),
                 InfoRow(label: '交易次数', value: '${result.tradeCount}'),
                 InfoRow(label: '买入次数', value: '${result.buyCount}'),
-                InfoRow(label: '卖出/清仓次数', value: '${result.sellCount}'),
+                InfoRow(label: '卖出次数', value: '${result.sellCount}'),
               ],
             ),
             const SizedBox(height: 20),
@@ -125,6 +125,5 @@ String _actionLabel(TrainingAction action) {
   return switch (action) {
     TrainingAction.buy => '买入',
     TrainingAction.sell => '卖出',
-    TrainingAction.clear => '清仓',
   };
 }
